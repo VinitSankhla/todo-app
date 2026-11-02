@@ -41,7 +41,11 @@ Amplify.configure(outputs);
 const client = generateClient<Schema>();
 const RUN_ID = `authz-test-${Date.now()}`;
 
-/** Signs in and returns the value the backend stores in `owner` for this user. */
+/**
+ * Signs in and returns the value the backend stores in `owner` ("<sub>::<username>").
+ * Note: when a task is read back, Amplify's owner field resolver returns only the "<sub>"
+ * part, so ownership checks below compare user IDs via ownerId().
+ */
 async function loginAs(user: { email: string; password: string }): Promise<string> {
   await signOut();
   const { isSignedIn, nextStep } = await signIn({ username: user.email, password: user.password });
@@ -52,9 +56,14 @@ async function loginAs(user: { email: string; password: string }): Promise<strin
   return `${userId}::${username}`;
 }
 
+/** The user ID (Cognito sub) part of an owner value, whether stored or as returned by the API. */
+function ownerId(owner: string | null | undefined): string {
+  return (owner ?? '').split('::')[0];
+}
+
 async function deleteOwnTestTasks(ownerKey: string) {
   const { data } = await client.models.Task.listTasksByOwner({ owner: ownerKey });
-  for (const task of data.filter((t) => t.title.startsWith(RUN_ID))) {
+  for (const task of (data ?? []).filter((t) => t.title.startsWith(RUN_ID))) {
     await client.models.Task.delete({ id: task.id });
   }
 }
@@ -91,19 +100,23 @@ afterAll(async () => {
 describe('user B cannot access user A’s tasks', () => {
   it('stores B’s new task with B as owner', async () => {
     const { data } = await client.models.Task.get({ id: taskBId });
-    expect(data?.owner).toBe(ownerB);
+    expect(ownerId(data?.owner)).toBe(ownerId(ownerB));
   });
 
-  it('cannot list A’s tasks through the owner index', async () => {
-    const { data } = await client.models.Task.listTasksByOwner({ owner: ownerA });
-    expect(data.map((t) => t.id)).not.toContain(taskAId);
-    expect(data.every((t) => t.owner === ownerB)).toBe(true);
+  it('cannot list A’s tasks through the owner index (refused or empty)', async () => {
+    const { data, errors } = await client.models.Task.listTasksByOwner({ owner: ownerA });
+    const items = data ?? [];
+    expect(items.map((t) => t.id)).not.toContain(taskAId);
+    expect(items.every((t) => ownerId(t.owner) === ownerId(ownerB))).toBe(true);
+    // Either the server refuses the request outright, or it returns nothing.
+    expect(errors?.length || items.length === 0).toBeTruthy();
   });
 
   it('sees only its own tasks when listing everything', async () => {
     const { data } = await client.models.Task.list({ limit: 1000 });
     expect(data.map((t) => t.id)).not.toContain(taskAId);
-    expect(data.every((t) => t.owner === ownerB)).toBe(true);
+    expect(data.map((t) => t.id)).toContain(taskBId);
+    expect(data.every((t) => ownerId(t.owner) === ownerId(ownerB))).toBe(true);
   });
 
   it('cannot read A’s task by id', async () => {
@@ -158,8 +171,8 @@ describe('user A’s task is untouched', () => {
       description: 'Only user A may see this',
       dueDate: '2030-01-15',
       done: false,
-      owner: ownerA,
     });
+    expect(ownerId(data?.owner)).toBe(ownerId(ownerA));
   });
 
   it('does not see B’s task', async () => {
