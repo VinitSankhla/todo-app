@@ -6,11 +6,16 @@ import { AuthContext, type AuthState } from './auth-context';
 /** Reads the current Cognito session; any failure means "signed out". */
 async function loadAuthState(): Promise<AuthState> {
   try {
-    const { userId } = await getCurrentUser();
+    const { userId, username } = await getCurrentUser();
     const attributes = await fetchUserAttributes();
     return {
       status: 'signedIn',
-      user: { userId, email: attributes.email ?? '', name: attributes.name ?? '' },
+      user: {
+        userId,
+        ownerKey: `${userId}::${username}`,
+        email: attributes.email ?? '',
+        name: attributes.name ?? '',
+      },
     };
   } catch {
     return { status: 'signedOut' };

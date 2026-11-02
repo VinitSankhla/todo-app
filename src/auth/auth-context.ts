@@ -2,6 +2,8 @@ import { createContext, useContext } from 'react';
 
 export interface AuthUser {
   userId: string;
+  /** Value stored in each task's `owner` field by the backend: "<sub>::<username>". */
+  ownerKey: string;
   email: string;
   name: string;
 }

@@ -2,7 +2,9 @@ import type {
   ButtonHTMLAttributes,
   InputHTMLAttributes,
   ReactNode,
+  Ref,
   SelectHTMLAttributes,
+  TextareaHTMLAttributes,
 } from 'react';
 
 interface FieldWrapperProps {
@@ -108,6 +110,7 @@ export function SelectField({
 }
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
+  ref?: Ref<HTMLButtonElement>;
   variant?: 'primary' | 'secondary' | 'danger';
   loading?: boolean;
 };
@@ -177,5 +180,38 @@ export function AuthCard({ title, children }: { title: string; children: ReactNo
         {children}
       </div>
     </main>
+  );
+}
+
+type TextAreaFieldProps = TextareaHTMLAttributes<HTMLTextAreaElement> & {
+  id: string;
+  label: string;
+  error?: string;
+  hint?: string;
+  optional?: boolean;
+};
+
+export function TextAreaField({
+  id,
+  label,
+  error,
+  hint,
+  optional,
+  ...textareaProps
+}: TextAreaFieldProps) {
+  return (
+    <FieldWrapper id={id} label={label} error={error} hint={hint} optional={optional}>
+      {(describedBy) => (
+        <textarea
+          id={id}
+          name={id}
+          rows={3}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={describedBy}
+          className={controlClass}
+          {...textareaProps}
+        />
+      )}
+    </FieldWrapper>
   );
 }
