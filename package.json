@@ -13,7 +13,8 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "amplify:placeholder": "node scripts/ensure-amplify-outputs.mjs"
+    "amplify:placeholder": "node scripts/ensure-amplify-outputs.mjs",
+    "test:authz": "vitest run --config vitest.authz.config.ts"
   },
   "dependencies": {
     "aws-amplify": "^6.22.2",

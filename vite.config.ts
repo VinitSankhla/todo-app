@@ -8,8 +8,8 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
-    // The sandbox authorization test talks to real AWS, so it is run separately (npm run test:authz).
-    exclude: ['node_modules', 'dist', 'scripts/**', '.amplify/**'],
+    // integration/ talks to the real sandbox, so it runs separately (npm run test:authz).
+    exclude: ['node_modules', 'dist', 'scripts/**', 'integration/**', '.amplify/**'],
     restoreMocks: true,
   },
 });

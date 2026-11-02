@@ -10,6 +10,7 @@
     "allowJs": true,
     "checkJs": false,
     "skipLibCheck": true,
+    "types": ["node"],
     "noEmit": true,
     "paths": {
       "$amplify/*": ["../.amplify/generated/*"]

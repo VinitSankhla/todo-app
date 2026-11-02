@@ -22,3 +22,10 @@ cfnUserPool.policies = {
     temporaryPasswordValidityDays: 3,
   },
 };
+
+// Record which environment amplify_outputs.json belongs to. Amplify Hosting sets AWS_BRANCH
+// during branch deploys; `ampx sandbox` does not. The sandbox-only authorization test
+// (npm run test:authz) refuses to run unless this says "sandbox".
+backend.addOutput({
+  custom: { environment: process.env.AWS_BRANCH ?? 'sandbox' },
+});
