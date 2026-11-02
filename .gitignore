@@ -1,0 +1,33 @@
+# Dependencies and build output
+node_modules
+dist
+dist-ssr
+coverage
+*.tsbuildinfo
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Secrets and local environment — never commit these
+.env
+.env.*
+!.env.example
+*.local
+*.pem
+.aws/
+
+# Amplify Gen 2: generated per environment (sandbox or deploy), not committed
+amplify_outputs.json
+amplify_outputs*.json
+.amplify/
+
+# Editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+Thumbs.db
+*.suo
+*.sw?

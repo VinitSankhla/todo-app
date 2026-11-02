@@ -1,0 +1,8 @@
+@import 'tailwindcss';
+
+/* Clear, consistent keyboard focus ring for every interactive element. */
+@layer base {
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-indigo-600;
+  }
+}
