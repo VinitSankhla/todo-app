@@ -5,6 +5,24 @@ const TITLE_MAX_LENGTH = 200;
 const DESCRIPTION_MAX_LENGTH = 2000;
 
 /**
+ * True for a real calendar date written as YYYY-MM-DD. Uses plain arithmetic because AppSync's
+ * util.time parsers expect full timestamps and do not round-trip a bare date.
+ */
+function isRealDate(value) {
+  const parts = value.split('-');
+  if (parts.length !== 3 || parts[0].length !== 4 || parts[1].length !== 2) return false;
+  if (parts[2].length !== 2) return false;
+  const year = Number(parts[0]);
+  const month = Number(parts[1]);
+  const day = Number(parts[2]);
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) return false;
+  if (month < 1 || month > 12 || day < 1) return false;
+  const leapYear = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+  const daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return day <= daysInMonth[month - 1];
+}
+
+/**
  * editTask: validates the changed fields on the server, then updates the task only if the
  * caller owns it. The ownership check is a DynamoDB condition, evaluated atomically with the write.
  * Omitted arguments are left unchanged; an empty description or null due date clears that field.
@@ -48,12 +66,7 @@ export function request(ctx) {
   if (args.dueDate !== undefined) {
     names['#dueDate'] = 'dueDate';
     if (args.dueDate) {
-      const roundTrip = util.time.epochMilliSecondsToFormatted(
-        util.time.parseFormattedToEpochMilliSeconds(args.dueDate, 'yyyy-MM-dd', 'UTC'),
-        'yyyy-MM-dd',
-        'UTC',
-      );
-      if (roundTrip !== args.dueDate) util.error('Due date is not a real date.', 'ValidationError');
+      if (!isRealDate(args.dueDate)) util.error('Due date is not a real date.', 'ValidationError');
       if (args.dueDate < '2000-01-01' || args.dueDate > '2100-12-31') {
         util.error('Due date must be between 2000 and 2100.', 'ValidationError');
       }

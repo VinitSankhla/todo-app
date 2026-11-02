@@ -5,6 +5,8 @@ import * as addTask from './add-task.js';
 import * as editTask from './edit-task.js';
 
 // Minimal stand-in for the AppSync runtime's `util` so the resolver logic can run in Node.
+// Only helpers whose behaviour is trivial are faked; date validation must not depend on
+// util.time parsers (their real behaviour with bare dates differs from any Node imitation).
 vi.mock('@aws-appsync/utils', () => {
   class AppSyncError extends Error {
     constructor(
@@ -22,14 +24,6 @@ vi.mock('@aws-appsync/utils', () => {
       autoId: () => 'generated-id',
       time: {
         nowISO8601: () => '2026-11-02T10:00:00.000Z',
-        parseFormattedToEpochMilliSeconds: (value: string) =>
-          // Lenient like Java's parser: 2026-02-30 rolls over to March 2.
-          Date.UTC(
-            Number(value.slice(0, 4)),
-            Number(value.slice(5, 7)) - 1,
-            Number(value.slice(8, 10)),
-          ),
-        epochMilliSecondsToFormatted: (ms: number) => new Date(ms).toISOString().slice(0, 10),
       },
       dynamodb: { toMapValues: (value: unknown) => value },
     },
@@ -41,6 +35,37 @@ const OWNER = 'sub-a::user-a';
 
 type Ctx = Parameters<typeof addTask.request>[0];
 const ctx = (args: Record<string, unknown>) => ({ args, identity }) as unknown as Ctx;
+
+describe('due date checks (same code AppSync runs)', () => {
+  // Regression: every valid date was rejected as "not a real date" in the deployed API.
+  it.each(['2026-12-01', '2000-01-01', '2100-12-31', '2028-02-29', '2000-02-29', '2026-04-30'])(
+    'accepts %s on add and edit',
+    (dueDate) => {
+      expect(addTask.request(ctx({ title: 'ok', dueDate })).attributeValues).toHaveProperty(
+        'dueDate',
+        dueDate,
+      );
+      expect(editTask.request(ctx({ id: 't1', dueDate })).update.expression).toContain('#dueDate');
+    },
+  );
+
+  it.each([
+    '2026-02-30',
+    '2027-02-29',
+    '2100-02-29',
+    '2026-04-31',
+    '2026-13-01',
+    '2026-00-10',
+    '2026-01-00',
+  ])('rejects %s on add and edit', (dueDate) => {
+    expect(() => addTask.request(ctx({ title: 'ok', dueDate }))).toThrow(
+      'Due date is not a real date.',
+    );
+    expect(() => editTask.request(ctx({ id: 't1', dueDate }))).toThrow(
+      'Due date is not a real date.',
+    );
+  });
+});
 
 describe('addTask resolver', () => {
   it('stores a trimmed task owned by the caller, ignoring any client-sent owner', () => {
