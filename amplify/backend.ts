@@ -23,6 +23,17 @@ cfnUserPool.policies = {
   },
 };
 
+// Production (the `main` branch deployed by Amplify Hosting) only — never the sandbox:
+// - continuous backups (point-in-time recovery, restorable to any second in the last 35 days)
+// - deletion protection on the task table and the user pool, so a mistaken stack deletion
+//   or command cannot wipe real users' data.
+if (process.env.AWS_BRANCH === 'main') {
+  const taskTable = backend.data.resources.cfnResources.amplifyDynamoDbTables['Task'];
+  taskTable.pointInTimeRecoveryEnabled = true;
+  taskTable.deletionProtectionEnabled = true;
+  cfnUserPool.deletionProtection = 'ACTIVE';
+}
+
 // Record which environment amplify_outputs.json belongs to. Amplify Hosting sets AWS_BRANCH
 // during branch deploys; `ampx sandbox` does not. The sandbox-only authorization test
 // (npm run test:authz) refuses to run unless this says "sandbox".

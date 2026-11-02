@@ -1,0 +1,36 @@
+# Amplify Hosting build settings (used on every push to the connected branch).
+# https://docs.amplify.aws/react/deploy-and-host/fullstack-branching/
+version: 1
+backend:
+  phases:
+    preBuild:
+      commands:
+        - nvm install 22 && nvm use 22
+        - node --version && npm --version
+        - npm ci --cache .npm --prefer-offline --no-audit --no-fund
+        # Stop before deploying anything if the code does not type-check or a test fails.
+        - npm run amplify:placeholder
+        - npm run typecheck
+        - npm test
+        - rm amplify_outputs.json
+    build:
+      commands:
+        # Deploys this branch's own backend (Cognito, AppSync, DynamoDB) and writes
+        # its amplify_outputs.json for the frontend build below.
+        - npx ampx pipeline-deploy --branch $AWS_BRANCH --app-id $AWS_APP_ID
+frontend:
+  phases:
+    preBuild:
+      commands:
+        - nvm install 22 && nvm use 22
+    build:
+      commands:
+        - npm run build
+  artifacts:
+    baseDirectory: dist
+    files:
+      - '**/*'
+  cache:
+    paths:
+      - .npm/**/*
+      - node_modules/**/*
