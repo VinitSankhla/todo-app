@@ -66,7 +66,8 @@ export async function editTask(id: string, changes: TaskChanges): Promise<Task> 
     id,
     ...(changes.title !== undefined && { title: changes.title }),
     ...(changes.description !== undefined && { description: changes.description }),
-    ...(changes.dueDate !== undefined && { dueDate: changes.dueDate || null }),
+    // "" (not null) clears the date: the server cannot tell a null argument from an omitted one.
+    ...(changes.dueDate !== undefined && { dueDate: changes.dueDate }),
     ...(changes.done !== undefined && { done: changes.done }),
   });
   throwIfErrors(errors);

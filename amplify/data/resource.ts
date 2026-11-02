@@ -43,7 +43,9 @@ const schema = a.schema({
       id: a.id().required(),
       title: a.string(),
       description: a.string(),
-      dueDate: a.date(),
+      // A string (validated as YYYY-MM-DD in the resolver) so "" can clear the date:
+      // a null argument is indistinguishable from an omitted one in the resolver.
+      dueDate: a.string(),
       done: a.boolean(),
     })
     .returns(a.ref('Task'))

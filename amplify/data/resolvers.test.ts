@@ -145,11 +145,21 @@ describe('editTask resolver', () => {
   });
 
   it('clears description and due date when they are emptied', () => {
-    const request = editTask.request(ctx({ id: 't1', description: '', dueDate: null }));
+    const request = editTask.request(ctx({ id: 't1', description: '', dueDate: '' }));
     expect(request.update.expression).toBe(
       'SET #updatedAt = :updatedAt REMOVE #description, #dueDate',
     );
   });
+
+  // editTask takes dueDate as a plain string, so the resolver alone must reject bad formats.
+  it.each(['2026-1-01', '20261201', '2026/12/01', 'abcd-ef-gh', '2026-12-01T00:00', ' 2026-12-01'])(
+    'rejects badly formatted due date %j',
+    (dueDate) => {
+      expect(() => editTask.request(ctx({ id: 't1', dueDate }))).toThrow(
+        'Due date is not a real date.',
+      );
+    },
+  );
 
   it.each([
     [{ id: 't1' }, 'Nothing to update.'],

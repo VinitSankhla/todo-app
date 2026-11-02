@@ -31,7 +31,7 @@ function twoDigits(text) {
 /**
  * editTask: validates the changed fields on the server, then updates the task only if the
  * caller owns it. The ownership check is a DynamoDB condition, evaluated atomically with the write.
- * Omitted arguments are left unchanged; an empty description or null due date clears that field.
+ * Omitted arguments are left unchanged; an empty description or due date ("") clears that field.
  */
 export function request(ctx) {
   const args = ctx.args;
