@@ -299,4 +299,36 @@ describe('forgot password', () => {
     });
     expect(await screen.findByText(/Password changed/)).toBeInTheDocument();
   });
+
+  it('explains where the code comes from and can resend it', async () => {
+    vi.mocked(resetPassword).mockResolvedValue({} as Awaited<ReturnType<typeof resetPassword>>);
+    const user = renderAt('/forgot-password');
+
+    await user.type(await screen.findByLabelText('Gmail address'), 'Vinit@gmail.com');
+    await user.click(screen.getByRole('button', { name: 'Send reset code' }));
+
+    expect(await screen.findByText(/has a verified account on this site/)).toBeInTheDocument();
+    expect(screen.getByText('no-reply@verificationemail.com')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'or create an account' })).toHaveAttribute(
+      'href',
+      '/signup',
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Resend code' }));
+    expect(resetPassword).toHaveBeenCalledTimes(2);
+    expect(resetPassword).toHaveBeenLastCalledWith({ username: 'vinit@gmail.com' });
+    expect(await screen.findByText(/We sent another code/)).toBeInTheDocument();
+  });
+
+  it('shows an error if resending fails (e.g. too many attempts)', async () => {
+    vi.mocked(resetPassword)
+      .mockResolvedValueOnce({} as Awaited<ReturnType<typeof resetPassword>>)
+      .mockRejectedValueOnce(awsError('LimitExceededException'));
+    const user = renderAt('/forgot-password');
+
+    await user.type(await screen.findByLabelText('Gmail address'), 'vinit@gmail.com');
+    await user.click(screen.getByRole('button', { name: 'Send reset code' }));
+    await user.click(await screen.findByRole('button', { name: 'Resend code' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Too many attempts.');
+  });
 });

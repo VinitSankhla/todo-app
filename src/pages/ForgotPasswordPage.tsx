@@ -23,6 +23,22 @@ export default function ForgotPasswordPage() {
   const [errors, setErrors] = useState<Errors>({});
   const [submitError, setSubmitError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [resending, setResending] = useState(false);
+  const [resent, setResent] = useState(false);
+
+  async function handleResend() {
+    setSubmitError('');
+    setResent(false);
+    setResending(true);
+    try {
+      await resetPassword({ username: normalizeEmail(email) });
+      setResent(true);
+    } catch (error) {
+      setSubmitError(getAuthErrorMessage(error));
+    } finally {
+      setResending(false);
+    }
+  }
 
   async function handleRequest(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -100,9 +116,26 @@ export default function ForgotPasswordPage() {
         </form>
       ) : (
         <form noValidate onSubmit={handleReset} className="space-y-4">
+          {/* For privacy, Cognito answers the same whether or not an account exists, so this
+              message cannot say for certain that an email was sent. */}
           <Alert kind="success">
-            If an account exists for {normalizeEmail(email)}, a code has been sent to it.
+            If {normalizeEmail(email)} has a verified account on this site, we have emailed it a
+            6-digit code.
           </Alert>
+          <div className="space-y-1 text-sm text-slate-600">
+            <p>
+              It can take a minute to arrive. Check your Spam and Promotions folders for an email
+              from <span className="font-medium">no-reply@verificationemail.com</span>.
+            </p>
+            <p>
+              No email? Make sure you have signed up and verified this address on this site,{' '}
+              <Link to="/signup" className="font-medium text-indigo-700 hover:underline">
+                or create an account
+              </Link>
+              .
+            </p>
+          </div>
+          {resent && <Alert kind="success">We sent another code, if the account exists.</Alert>}
           {submitError && <Alert kind="error">{submitError}</Alert>}
           <TextField
             id="code"
@@ -135,6 +168,15 @@ export default function ForgotPasswordPage() {
           />
           <Button type="submit" loading={submitting} className="w-full">
             Change password
+          </Button>
+          <Button
+            variant="secondary"
+            loading={resending}
+            disabled={submitting}
+            onClick={handleResend}
+            className="w-full"
+          >
+            Resend code
           </Button>
         </form>
       )}
