@@ -22,7 +22,7 @@ customHeaders:
           style-src 'self';
           img-src 'self' data:;
           font-src 'self';
-          connect-src 'self' https://cognito-idp.ap-south-1.amazonaws.com https://cognito-identity.ap-south-1.amazonaws.com https://*.appsync-api.ap-south-1.amazonaws.com;
+          connect-src 'self' https://cognito-idp.ap-south-1.amazonaws.com https://cognito-identity.ap-south-1.amazonaws.com https://*.appsync-api.ap-south-1.amazonaws.com wss://*.appsync-realtime-api.ap-south-1.amazonaws.com;
           frame-ancestors 'none';
           base-uri 'self';
           form-action 'self';
