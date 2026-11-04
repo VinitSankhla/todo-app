@@ -14,7 +14,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "amplify:placeholder": "node scripts/ensure-amplify-outputs.mjs",
-    "test:authz": "vitest run --config vitest.authz.config.ts"
+    "test:authz": "vitest run --config vitest.authz.config.ts integration/authz.test.ts",
+    "test:assistant-authz": "vitest run --config vitest.authz.config.ts integration/assistant-authz.test.ts"
   },
   "dependencies": {
     "aws-amplify": "^6.22.2",
