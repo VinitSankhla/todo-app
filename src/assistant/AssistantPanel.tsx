@@ -2,7 +2,9 @@ import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent 
 import { ASSISTANT_MAX_MESSAGE_LENGTH } from '../../shared/assistant-limits';
 import { Alert, Button, Spinner } from '../components/ui';
 import { ASSISTANT_UNAVAILABLE } from '../lib/assistant-api';
+import { canSpeak, loadSpeakReplies, saveSpeakReplies, speak, stopSpeaking } from './speech';
 import { useAssistantChat, type ChatTurn } from './useAssistantChat';
+import { useVoiceInput } from './useVoiceInput';
 
 interface AssistantPanelProps {
   onClose: () => void;
@@ -23,7 +25,12 @@ const EXAMPLES = [
 export default function AssistantPanel({ onClose, onTasksChanged }: AssistantPanelProps) {
   const { status, turns, busy, send, newChat } = useAssistantChat(onTasksChanged);
   const [draft, setDraft] = useState('');
+  const voice = useVoiceInput(setDraft);
+  const [speechAvailable] = useState(canSpeak);
+  const [speakReplies, setSpeakReplies] = useState(() => speechAvailable && loadSpeakReplies());
+  const spokenTurn = useRef(0);
   const titleId = useId();
+  const voiceHelpId = useId();
   const inputId = useId();
   const counterId = useId();
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -48,6 +55,7 @@ export default function AssistantPanel({ onClose, onTasksChanged }: AssistantPan
     document.addEventListener('keydown', handleKeyDown);
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
+      stopSpeaking();
       opener?.focus();
     };
   }, []);
@@ -64,8 +72,25 @@ export default function AssistantPanel({ onClose, onTasksChanged }: AssistantPan
   const tooLong = length > ASSISTANT_MAX_MESSAGE_LENGTH;
   const canSend = status === 'ready' && !busy && length > 0 && !tooLong;
 
+  // Read each finished reply aloud once, when the user has switched that on.
+  useEffect(() => {
+    const latest = turns.at(-1);
+    if (!latest || latest.key === spokenTurn.current) return;
+    if (latest.status !== 'done' && latest.status !== 'error') return;
+    spokenTurn.current = latest.key;
+    if (speakReplies) speak(latest.status === 'error' ? (latest.error ?? '') : latest.reply);
+  }, [turns, speakReplies]);
+
+  function toggleSpeakReplies(value: boolean) {
+    setSpeakReplies(value);
+    saveSpeakReplies(value);
+    if (!value) stopSpeaking();
+  }
+
   async function submit() {
     if (!canSend) return;
+    voice.stop();
+    stopSpeaking();
     const text = draft;
     setDraft('');
     const sent = await send(text);
@@ -171,20 +196,53 @@ export default function AssistantPanel({ onClose, onTasksChanged }: AssistantPan
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={handleKeyDown}
           disabled={status !== 'ready'}
-          placeholder="Type a message... (Enter to send)"
-          aria-describedby={counterId}
+          placeholder={voice.listening ? 'Listening...' : 'Type a message... (Enter to send)'}
+          aria-describedby={`${counterId} ${voiceHelpId}`}
           aria-invalid={tooLong || undefined}
           className="block w-full resize-none rounded-md border border-slate-300 px-3 py-2 text-slate-900 shadow-sm placeholder:text-slate-400 disabled:bg-slate-100 aria-[invalid=true]:border-red-600"
         />
+        {voice.error && <Alert kind="error">{voice.error}</Alert>}
         <div className="flex items-center justify-between gap-2">
           <p id={counterId} className={`text-xs ${tooLong ? 'text-red-700' : 'text-slate-500'}`}>
             {length}/{ASSISTANT_MAX_MESSAGE_LENGTH}
             {tooLong && ' - message is too long'}
           </p>
-          <Button type="submit" disabled={!canSend} loading={busy}>
-            Send
-          </Button>
+          <div className="flex gap-2">
+            {voice.supported && (
+              <Button
+                variant="secondary"
+                onClick={voice.listening ? voice.stop : voice.start}
+                disabled={status !== 'ready' || busy}
+              >
+                {voice.listening ? 'Stop listening' : 'Speak'}
+              </Button>
+            )}
+            <Button type="submit" disabled={!canSend} loading={busy}>
+              Send
+            </Button>
+          </div>
         </div>
+        <div id={voiceHelpId} className="space-y-1 text-xs text-slate-500">
+          {voice.listening && (
+            <p role="status" className="font-medium text-indigo-700">
+              Listening... speak now, then check the text and press Send.
+            </p>
+          )}
+          {!voice.supported && (
+            <p>Voice input is not available in this browser. Please type your message.</p>
+          )}
+        </div>
+        {speechAvailable && (
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={speakReplies}
+              onChange={(event) => toggleSpeakReplies(event.target.checked)}
+              className="h-4 w-4 rounded border-slate-300"
+            />
+            Read replies aloud
+          </label>
+        )}
       </form>
     </section>
   );
