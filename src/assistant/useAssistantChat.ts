@@ -3,6 +3,7 @@ import { ASSISTANT_MAX_MESSAGE_LENGTH } from '../../shared/assistant-limits';
 import {
   ASSISTANT_UNAVAILABLE,
   startAssistantChat,
+  visibleReply,
   type AssistantChat,
 } from '../lib/assistant-api';
 
@@ -28,7 +29,7 @@ interface ReplyBuffer {
 
 function joinReply(buffer: ReplyBuffer): string {
   return buffer.blocks
-    .map((pieces) => pieces.join(''))
+    .map((pieces) => visibleReply(pieces.join('')))
     .filter(Boolean)
     .join('\n\n');
 }

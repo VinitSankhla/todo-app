@@ -111,7 +111,11 @@ const createSchema = {
 const updateSchema = {
   type: 'object',
   properties: {
-    task_id: { type: 'string', description: 'The id of the task to change, from find_tasks.' },
+    task: {
+      type: 'string',
+      description:
+        "Which task: its current title as the user said it (e.g. 'Call bank'), or its id from find_tasks.",
+    },
     new_title: { type: 'string', description: 'The new title, when renaming the task.' },
     new_description: {
       type: 'string',
@@ -125,15 +129,19 @@ const updateSchema = {
     remove_due_date: { type: 'boolean', description: 'true to remove the due date.' },
     done: { type: 'boolean', description: 'true = mark done, false = mark not done.' },
   },
-  required: ['task_id'],
+  required: ['task'],
 } as const;
 
-const idSchema = {
+const taskSchema = {
   type: 'object',
   properties: {
-    task_id: { type: 'string', description: 'The id of the task, from find_tasks.' },
+    task: {
+      type: 'string',
+      description:
+        "Which task: its current title as the user said it (e.g. 'Call bank'), or its id from find_tasks.",
+    },
   },
-  required: ['task_id'],
+  required: ['task'],
 } as const;
 
 /** A tool of any input shape, as the conversation runtime accepts it. */
@@ -154,12 +162,32 @@ export function createTools(context: ToolContext): AssistantTool[] {
     }
   }
 
-  async function getOwnTask(taskId: string): Promise<TaskRecord> {
-    if (!taskId) fail('task_id is required. Use find_tasks first.');
-    // getTask enforces owner-only access: another user's task id looks exactly like a missing one.
-    const task = await context.tasks.getTask(taskId);
-    if (!task) fail('Task not found. Use find_tasks to get the correct id.');
-    return task;
+  /**
+   * Finds the one task the model means, by id or title, among the user's own tasks only.
+   * Never guesses: if several tasks match, it refuses and lists them so the model must ask.
+   */
+  async function resolveTask(ref: string | undefined): Promise<TaskRecord> {
+    const wanted = (ref ?? '').trim();
+    if (!wanted) fail('Say which task (its title). Use find_tasks if unsure.');
+    const all = await context.tasks.listTasks();
+    const byId = all.find((task) => task.id === wanted);
+    if (byId) return byId;
+    const normalized = wanted.toLowerCase().replace(/\s+/g, ' ');
+    const exact = all.filter(
+      (task) => task.title.trim().toLowerCase().replace(/\s+/g, ' ') === normalized,
+    );
+    const candidates = exact.length > 0 ? exact : all.filter((task) => matches(task, wanted));
+    if (candidates.length === 1) return candidates[0];
+    if (candidates.length === 0) {
+      fail(`No task matches "${wanted}". Use find_tasks to see the user's tasks.`);
+    }
+    throw new TaskApiError(
+      JSON.stringify({
+        error: `${candidates.length} tasks match. Do not pick one yourself: ask the user which one they mean (by title, due date or status), then call again with that task's id.`,
+        note: DATA_NOTE,
+        matches: candidates.slice(0, MAX_RESULTS).map(taskView),
+      }),
+    );
   }
 
   const findTasks = createExecutableTool(
@@ -213,7 +241,7 @@ export function createTools(context: ToolContext): AssistantTool[] {
     { json: updateSchema },
     async (input) => {
       countCall();
-      await getOwnTask(input.task_id);
+      const target = await resolveTask(input.task);
       const changes: TaskChanges = {};
       if (input.new_title !== undefined) {
         const title = input.new_title.trim();
@@ -234,7 +262,7 @@ export function createTools(context: ToolContext): AssistantTool[] {
       if (input.done !== undefined) changes.done = input.done;
       if (Object.keys(changes).length === 0)
         fail('Nothing to change. Ask the user what to change.');
-      const task = await context.tasks.editTask(input.task_id, changes);
+      const task = await context.tasks.editTask(target.id, changes);
       return result({ note: DATA_NOTE, updated: taskView(task) });
     },
   );
@@ -242,14 +270,14 @@ export function createTools(context: ToolContext): AssistantTool[] {
   const requestDelete = createExecutableTool(
     'request_delete',
     'Step 1 of deleting a task. Call this, then ask the user to confirm deleting the task by its title, and stop. Never delete without the user confirming.',
-    { json: idSchema },
+    { json: taskSchema },
     async (input) => {
       countCall();
       // One deletion per question, so the user always knows exactly which task "yes" deletes.
       if (deleteRequested) {
         fail('Only one task can be deleted at a time. Ask the user which task they mean.');
       }
-      const task = await getOwnTask(input.task_id);
+      const task = await resolveTask(input.task);
       deleteRequested = true;
       await context.store.setPendingDelete(context.userId, context.conversationId, {
         taskId: task.id,

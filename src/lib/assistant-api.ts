@@ -36,6 +36,21 @@ export function assistantErrorMessage(
   return known?.message ?? ASSISTANT_UNAVAILABLE;
 }
 
+/**
+ * Removes the model's private reasoning from a reply. Amazon Nova writes it inside
+ * <thinking>…</thinking> tags; while a reply streams in, the closing tag may not have arrived yet.
+ */
+export function visibleReply(text: string): string {
+  let visible = text
+    .replace(/<thinking>[\s\S]*?<\/thinking>/g, '')
+    .replace(/<thinking>[\s\S]*$/, '');
+  const partialTag = /<[a-z/]*$/.exec(visible);
+  if (partialTag && '<thinking>'.startsWith(partialTag[0])) {
+    visible = visible.slice(0, partialTag.index);
+  }
+  return visible.trim();
+}
+
 let client: ReturnType<typeof generateClient<Schema>> | undefined;
 
 function getClient() {

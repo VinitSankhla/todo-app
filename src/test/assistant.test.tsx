@@ -6,6 +6,7 @@ import { AuthContext, type AuthContextValue } from '../auth/auth-context';
 import {
   assistantErrorMessage,
   startAssistantChat,
+  visibleReply,
   type AssistantHandlers,
 } from '../lib/assistant-api';
 import { listTasks, type Task } from '../lib/task-api';
@@ -130,6 +131,22 @@ describe('assistant panel', () => {
     );
     expect(panel.getByRole('alert')).toHaveTextContent('Please wait a moment.');
     expect(screen.getByText('Buy milk')).toBeInTheDocument();
+  });
+
+  it("hides the model's private <thinking> text, even while it streams in", async () => {
+    expect(visibleReply('<thinking>find it</thinking> Done!')).toBe('Done!');
+    expect(visibleReply('<thinking>a</thinking>\n\n<thinking>b</thinking>\nWhich one?')).toBe(
+      'Which one?',
+    );
+    expect(visibleReply('<thinking>still thinking')).toBe('');
+    expect(visibleReply('<think')).toBe('');
+    expect(visibleReply('Use a < b')).toBe('Use a < b');
+
+    const { user, panel } = await openAssistant();
+    await user.type(messageBox(), 'hi{Enter}');
+    act(() => handlers.onText('msg-1', 0, 0, '<thinking>The user greets me.</thinking> Hello!'));
+    expect(panel.getByText('Hello!')).toBeInTheDocument();
+    expect(panel.queryByText(/The user greets me/)).not.toBeInTheDocument();
   });
 
   it('never shows raw technical errors', () => {
