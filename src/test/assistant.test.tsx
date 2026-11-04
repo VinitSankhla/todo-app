@@ -141,6 +141,15 @@ describe('assistant panel', () => {
     expect(visibleReply('<thinking>still thinking')).toBe('');
     expect(visibleReply('<think')).toBe('');
     expect(visibleReply('Use a < b')).toBe('Use a < b');
+    // Malformed and other tags seen from Nova.
+    expect(
+      visibleReply('<thinking>a</thinking>\n<thinkingI> have b</thinking> Here they are.'),
+    ).toBe('Here they are.');
+    expect(visibleReply('<response>Task added.</response>')).toBe('Task added.');
+    expect(visibleReply('<thinking>x</thinking><request_delete>Delete it?')).toBe('Delete it?');
+    expect(visibleReply('Done. </resp')).toBe('Done.');
+    // Reasoning split across two content blocks.
+    expect(visibleReply('<thinking>part one\n\npart two</thinking> Answer.')).toBe('Answer.');
 
     const { user, panel } = await openAssistant();
     await user.type(messageBox(), 'hi{Enter}');

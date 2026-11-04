@@ -37,18 +37,26 @@ export function assistantErrorMessage(
 }
 
 /**
- * Removes the model's private reasoning from a reply. Amazon Nova writes it inside
- * <thinking>…</thinking> tags; while a reply streams in, the closing tag may not have arrived yet.
+ * Keeps only the assistant's answer. Amazon Nova writes its private reasoning inside
+ * <thinking> tags (sometimes malformed, e.g. "<thinkingI>"), and may add other tags such as
+ * <response>. While a reply streams in, a closing tag may not have arrived yet.
  */
 export function visibleReply(text: string): string {
-  let visible = text
-    .replace(/<thinking>[\s\S]*?<\/thinking>/g, '')
-    .replace(/<thinking>[\s\S]*$/, '');
-  const partialTag = /<[a-z/]*$/.exec(visible);
-  if (partialTag && '<thinking>'.startsWith(partialTag[0])) {
-    visible = visible.slice(0, partialTag.index);
+  let visible = text;
+  // Everything up to the last closing </thinking...> is reasoning.
+  const lastClose = Math.max(visible.lastIndexOf('</thinking'), visible.lastIndexOf('</ thinking'));
+  if (lastClose !== -1) {
+    const end = visible.indexOf('>', lastClose);
+    visible = end === -1 ? '' : visible.slice(end + 1);
   }
-  return visible.trim();
+  // An opening <thinking without its closing tag yet: hide from there on (still streaming).
+  const open = visible.search(/<\s*thinking/i);
+  if (open !== -1) visible = visible.slice(0, open);
+  // Remove any other tag-like markup such as <response>, </answer> or <request_delete>.
+  visible = visible.replace(/<\/?[a-z_][\w-]*(\s[^<>]*)?>/gi, '');
+  // A tag that has only partly arrived at the very end.
+  visible = visible.replace(/<\/?[a-z_][\w-]*$/i, '');
+  return visible.replace(/\n{3,}/g, '\n\n').trim();
 }
 
 let client: ReturnType<typeof generateClient<Schema>> | undefined;

@@ -28,10 +28,8 @@ interface ReplyBuffer {
 }
 
 function joinReply(buffer: ReplyBuffer): string {
-  return buffer.blocks
-    .map((pieces) => visibleReply(pieces.join('')))
-    .filter(Boolean)
-    .join('\n\n');
+  // Filter the whole reply at once: reasoning tags can span several content blocks.
+  return visibleReply(buffer.blocks.map((pieces) => pieces.join('')).join('\n\n'));
 }
 
 /**

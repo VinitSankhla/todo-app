@@ -108,7 +108,7 @@ export default function AssistantPanel({ onClose, onTasksChanged }: AssistantPan
             New chat
           </Button>
           <Button variant="secondary" onClick={onClose} aria-label="Close assistant">
-            <span aria-hidden="true">âœ•</span>
+            <span aria-hidden="true">X</span>
           </Button>
         </div>
       </header>
@@ -116,7 +116,7 @@ export default function AssistantPanel({ onClose, onTasksChanged }: AssistantPan
       <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
         {status === 'starting' && (
           <div className="py-6 text-center text-slate-600">
-            <Spinner label="Connecting to the assistantâ€¦" />
+            <Spinner label="Connecting to the assistant..." />
           </div>
         )}
 
@@ -171,7 +171,7 @@ export default function AssistantPanel({ onClose, onTasksChanged }: AssistantPan
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={handleKeyDown}
           disabled={status !== 'ready'}
-          placeholder="Type a messageâ€¦ (Enter to send)"
+          placeholder="Type a message... (Enter to send)"
           aria-describedby={counterId}
           aria-invalid={tooLong || undefined}
           className="block w-full resize-none rounded-md border border-slate-300 px-3 py-2 text-slate-900 shadow-sm placeholder:text-slate-400 disabled:bg-slate-100 aria-[invalid=true]:border-red-600"
@@ -179,7 +179,7 @@ export default function AssistantPanel({ onClose, onTasksChanged }: AssistantPan
         <div className="flex items-center justify-between gap-2">
           <p id={counterId} className={`text-xs ${tooLong ? 'text-red-700' : 'text-slate-500'}`}>
             {length}/{ASSISTANT_MAX_MESSAGE_LENGTH}
-            {tooLong && ' â€” message is too long'}
+            {tooLong && ' - message is too long'}
           </p>
           <Button type="submit" disabled={!canSend} loading={busy}>
             Send
@@ -202,7 +202,7 @@ function Turn({ turn }: { turn: ChatTurn }) {
       ) : (
         <div className="mr-8 whitespace-pre-wrap break-words rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-900">
           <span className="sr-only">Assistant: </span>
-          {turn.reply || (turn.status === 'done' ? '(no reply)' : <Spinner label="Thinkingâ€¦" />)}
+          {turn.reply || (turn.status === 'done' ? '(no reply)' : <Spinner label="Thinking..." />)}
         </div>
       )}
     </li>
