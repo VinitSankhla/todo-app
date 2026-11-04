@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import type { TaskInput } from '../../shared/task-validation';
 import { useAuth } from '../auth/auth-context';
 import { TaskForm } from '../components/TaskForm';
@@ -13,6 +13,9 @@ import {
   type Task,
   type TaskChanges,
 } from '../lib/task-api';
+
+// Loaded only when first opened, so the task page stays fast and works even if it fails to load.
+const AssistantPanel = lazy(() => import('../assistant/AssistantPanel'));
 
 type Filter = 'all' | 'active' | 'done';
 
@@ -32,6 +35,7 @@ export default function TasksPage() {
   const [load, setLoad] = useState<LoadState>({ status: 'loading' });
   const [filter, setFilter] = useState<Filter>('all');
   const [loggingOut, setLoggingOut] = useState(false);
+  const [assistantOpen, setAssistantOpen] = useState(false);
 
   const fetchTasks = useCallback(
     () =>
@@ -56,6 +60,14 @@ export default function TasksPage() {
     setLoad({ status: 'loading' });
     setLoad(await fetchTasks());
   }
+
+  // After the assistant replies it may have changed tasks: reload the list quietly in the
+  // background (keep showing the current list if the reload fails).
+  const refreshTasks = useCallback(() => {
+    fetchTasks().then((next) => {
+      if (next.status === 'ready') setLoad(next);
+    });
+  }, [fetchTasks]);
 
   const updateTasks = (change: (tasks: Task[]) => Task[]) =>
     setLoad((current) =>
@@ -100,9 +112,18 @@ export default function TasksPage() {
           <p className="truncate text-sm text-slate-700">
             Signed in as <span className="font-medium text-slate-900">{user?.name}</span>
           </p>
-          <Button variant="secondary" loading={loggingOut} onClick={handleLogout}>
-            Log out
-          </Button>
+          <div className="flex shrink-0 gap-2">
+            <Button
+              onClick={() => setAssistantOpen(true)}
+              aria-expanded={assistantOpen}
+              aria-haspopup="dialog"
+            >
+              Assistant
+            </Button>
+            <Button variant="secondary" loading={loggingOut} onClick={handleLogout}>
+              Log out
+            </Button>
+          </div>
         </div>
       </header>
 
@@ -171,6 +192,18 @@ export default function TasksPage() {
             ))}
         </section>
       </main>
+
+      {assistantOpen && (
+        <Suspense
+          fallback={
+            <div className="fixed bottom-4 right-4 z-40 rounded-md bg-white p-3 shadow-lg ring-1 ring-slate-200">
+              <Spinner label="Opening assistant…" />
+            </div>
+          }
+        >
+          <AssistantPanel onClose={() => setAssistantOpen(false)} onTasksChanged={refreshTasks} />
+        </Suspense>
+      )}
     </div>
   );
 }
