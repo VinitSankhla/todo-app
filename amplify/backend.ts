@@ -1,8 +1,13 @@
 import { defineBackend } from '@aws-amplify/backend';
-import { RemovalPolicy } from 'aws-cdk-lib';
+import { RemovalPolicy, Stack } from 'aws-cdk-lib';
 import { AttributeType, BillingMode, Table } from 'aws-cdk-lib/aws-dynamodb';
+import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import type { Function as LambdaFunction } from 'aws-cdk-lib/aws-lambda';
-import { assistantHandler } from './assistant/resource';
+import {
+  ASSISTANT_FOUNDATION_MODEL_ID,
+  ASSISTANT_INFERENCE_PROFILE_ID,
+  assistantHandler,
+} from './assistant/resource';
 import { auth } from './auth/resource';
 import { data } from './data/resource';
 
@@ -27,6 +32,23 @@ const assistantTable = new Table(backend.createStack('assistant-state'), 'Assist
 const assistantLambda = backend.assistantHandler.resources.lambda as LambdaFunction;
 assistantTable.grantReadWriteData(assistantLambda);
 assistantLambda.addEnvironment('ASSISTANT_TABLE_NAME', assistantTable.tableName);
+
+// Allow the assistant to call Nova Lite through the APAC cross-region inference profile only:
+// the profile in this region, plus the model in whichever APAC region the profile routes to,
+// but only when the call comes through that profile.
+const assistantStack = Stack.of(assistantLambda);
+const inferenceProfileArn = `arn:aws:bedrock:${assistantStack.region}:${assistantStack.account}:inference-profile/${ASSISTANT_INFERENCE_PROFILE_ID}`;
+const bedrockActions = ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'];
+assistantLambda.addToRolePolicy(
+  new PolicyStatement({ actions: bedrockActions, resources: [inferenceProfileArn] }),
+);
+assistantLambda.addToRolePolicy(
+  new PolicyStatement({
+    actions: bedrockActions,
+    resources: [`arn:aws:bedrock:*::foundation-model/${ASSISTANT_FOUNDATION_MODEL_ID}`],
+    conditions: { StringEquals: { 'bedrock:InferenceProfileArn': inferenceProfileArn } },
+  }),
+);
 
 // Explicit password policy, enforced by Cognito itself (not only by the signup form).
 const { cfnUserPool } = backend.auth.resources.cfnResources;
