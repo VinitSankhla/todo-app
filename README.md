@@ -2,10 +2,13 @@
 
 A per-user to-do list: sign up with a Gmail address, verify it with a code, then add, edit,
 complete and delete your own tasks. Users can never see or change each other's tasks.
+An optional **AI assistant** (chat, with voice where supported) can do the same by command —
+see [docs/assistant.md](docs/assistant.md).
 
 - **Frontend:** React + TypeScript + Vite, Tailwind CSS
 - **Backend:** AWS Amplify Gen 2 — Cognito (accounts), AppSync GraphQL API, DynamoDB (tasks),
-  one small Lambda (signup check) — all serverless and pay-per-use, in **ap-south-1 (Mumbai)**
+  small Lambdas (signup check, assistant) — all serverless and pay-per-use, in **ap-south-1 (Mumbai)**
+- **AI assistant:** Amplify AI Kit conversation route + Amazon Bedrock (Nova Lite)
 - **Hosting:** Amplify Hosting, auto-deployed from the `main` branch on GitHub
 - **Quality:** Vitest + React Testing Library, ESLint + Prettier, GitHub Actions CI
 
@@ -17,7 +20,9 @@ Browser (React) ──HTTPS──▶ Amplify Hosting (static site + security hea
    │       └── pre-sign-up Lambda: rejects non-@gmail.com and "+" addresses (server side)
    └──▶ AppSync API ──▶ DynamoDB "Task" table
            ├── list / get / delete: Amplify owner-only rules
-           └── addTask / editTask: custom resolvers that validate input and set/check the owner
+           ├── addTask / editTask: custom resolvers that validate input and set/check the owner
+           └── assistant (AI Kit chat, owner-only) ──▶ assistant Lambda ──▶ Bedrock Nova Lite
+                 tools call the API above with the user's own token (docs/assistant.md)
 ```
 
 Key security decisions:
@@ -38,11 +43,14 @@ Key security decisions:
 ```
 amplify/                 Backend (Amplify Gen 2, TypeScript)
   auth/                  Cognito settings + pre-sign-up Lambda
-  data/                  Task model, addTask/editTask resolvers (+ unit tests)
-  backend.ts             Password policy, production backups/deletion protection
+  data/                  Task model, addTask/editTask resolvers, assistant chat route (+ tests)
+  assistant/             Assistant Lambda: limits, dates, task tools, system prompt (+ tests)
+  backend.ts             Password policy, production backups/deletion protection,
+                         assistant state table and Bedrock permission
 shared/                  Validation rules shared by browser and server
-src/                     React app (pages, components, auth, API wrapper, tests)
-integration/             Sandbox-only two-user authorization test
+src/                     React app (pages, components, auth, assistant panel, API wrappers, tests)
+integration/             Sandbox-only two-user authorization tests (tasks and assistant)
+docs/assistant.md        How the AI assistant works, its safety rules, costs and limits
 scripts/                 Placeholder amplify_outputs.json for CI
 .github/workflows/ci.yml Lint, format, type-check, test, build on every push
 amplify.yml              Amplify Hosting build steps
@@ -71,17 +79,18 @@ Hosting) and `.env.local` are git-ignored. **No secrets are stored in the reposi
 
 ## Scripts
 
-| Command                       | What it does                                                 |
-| ----------------------------- | ------------------------------------------------------------ |
-| `npm run dev`                 | Start the local development server                           |
-| `npm run build`               | Type-check and build for production (`dist/`)                |
-| `npm run lint`                | ESLint (including accessibility rules)                       |
-| `npm run format` / `:check`   | Format with Prettier / verify formatting                     |
-| `npm run typecheck`           | TypeScript for the app and the backend                       |
-| `npm test`                    | Unit tests (no AWS needed; Amplify is mocked)                |
-| `npm run test:watch`          | Unit tests in watch mode                                     |
-| `npm run test:authz`          | Two-user authorization test against the **sandbox** (below)  |
-| `npm run amplify:placeholder` | Create a placeholder `amplify_outputs.json` (CI, new clones) |
+| Command                        | What it does                                                 |
+| ------------------------------ | ------------------------------------------------------------ |
+| `npm run dev`                  | Start the local development server                           |
+| `npm run build`                | Type-check and build for production (`dist/`)                |
+| `npm run lint`                 | ESLint (including accessibility rules)                       |
+| `npm run format` / `:check`    | Format with Prettier / verify formatting                     |
+| `npm run typecheck`            | TypeScript for the app and the backend                       |
+| `npm test`                     | Unit tests (no AWS needed; Amplify is mocked)                |
+| `npm run test:watch`           | Unit tests in watch mode                                     |
+| `npm run test:authz`           | Two-user authorization test against the **sandbox** (below)  |
+| `npm run test:assistant-authz` | Same for the AI assistant (**sandbox**, ~5 AI calls, < 1¢)   |
+| `npm run amplify:placeholder`  | Create a placeholder `amplify_outputs.json` (CI, new clones) |
 
 ### Authorization test (sandbox only)
 
@@ -96,6 +105,10 @@ unless `amplify_outputs.json` comes from the sandbox, and it deletes the tasks i
 3. `npm run test:authz`
 
 It is not part of CI because it needs AWS credentials and real users.
+
+`npm run test:assistant-authz` uses the same two users to prove user B cannot open or write
+into user A's assistant chat, and that B's assistant cannot reveal, rename or delete A's task.
+It makes about 5 AI model calls (well under 1 US cent).
 
 ## Deployment (Amplify Hosting)
 
@@ -130,8 +143,11 @@ are approximate for ap-south-1; check the AWS pricing pages for current numbers.
 | Lambda (signup check)   | 1 million runs/month                                 | fractions of a cent                       |
 | Amplify Hosting         | 1,000 build minutes, 5 GB storage, 15 GB transfer/mo | ~$0.01 per build minute, ~$0.15/GB served |
 | CloudWatch Logs         | 5 GB/month                                           | per GB                                    |
+| **Bedrock (assistant)** | none                                                 | ≈ $0.0005–0.002 per assistant message     |
 
-Expected cost for personal use: **$0 – a few cents per month**. Each push to `main` uses a few
+Expected cost for personal use: **$0 – a few cents per month**. The AI assistant is the only
+part that costs money per use; its limits (60 messages per user per day) cap it at roughly
+$1 per heavy user per month — see [docs/assistant.md](docs/assistant.md#new-aws-resources-and-cost-risk). Each push to `main` uses a few
 build minutes. A **$1/month AWS Budget alert** is set up on the account (Billing → Budgets).
 
 To stop all costs: delete the Amplify Hosting app (removes the production backend — note the
@@ -153,4 +169,6 @@ deletion protection above must be turned off first), and run
 - The production JavaScript bundle is ~545 KB (≈165 KB gzipped), mostly the Amplify library;
   Vite warns about its size. It could be split into smaller chunks later.
 - No offline support, sharing, reminders or multi-factor authentication.
+- AI assistant limits (e.g. deleting when several tasks have similar names can still fail) are
+  listed in [docs/assistant.md](docs/assistant.md#known-limits).
 - The app has automated tests but is **not guaranteed bug-free** — see the pre-launch checklist.
