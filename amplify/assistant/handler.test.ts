@@ -72,8 +72,34 @@ describe('assistant handler', () => {
       'create_task',
       'update_task',
       'request_delete',
-      'delete_task',
+      'confirm_delete',
     ]);
+  });
+
+  it('tells the model when the previous reply asked to confirm a deletion', async () => {
+    const store = fakeStore();
+    await store.setPendingDelete('alice-sub', 'chat-1', {
+      taskId: 't1',
+      title: 'Buy milk',
+      askedInMessageId: 'msg-1',
+    });
+    const { deps, runTurn } = setup('yes', store);
+    await handleAssistantTurn(event, deps);
+    expect(runTurn.mock.calls[0][0].modelConfiguration.systemPrompt).toMatch(
+      /PENDING: .*call confirm_delete/,
+    );
+  });
+
+  it('does not mention an old pending deletion from an earlier message', async () => {
+    const store = fakeStore();
+    await store.setPendingDelete('alice-sub', 'chat-1', {
+      taskId: 't1',
+      title: 'Buy milk',
+      askedInMessageId: 'msg-0',
+    });
+    const { deps, runTurn } = setup('yes', store);
+    await handleAssistantTurn(event, deps);
+    expect(runTurn.mock.calls[0][0].modelConfiguration.systemPrompt).not.toMatch(/PENDING/);
   });
 
   it('refuses a too-long message without calling the AI model', async () => {

@@ -134,20 +134,26 @@ describe('create_task', () => {
 });
 
 describe('update_task', () => {
+  it('ignores a plain "title" field, so the current title is never mistaken for a new one', async () => {
+    await expect(
+      call(toolsFor(), 'update_task', { task_id: 'a1', title: 'Buy milk' }),
+    ).rejects.toThrow(/Nothing to change/);
+  });
+
   it('changes the title and description', async () => {
     const result = await call(toolsFor(), 'update_task', {
       task_id: 'a1',
-      title: 'Buy oat milk',
-      description: '2 litres',
+      new_title: 'Buy oat milk',
+      new_description: '2 litres',
     });
     expect(result.updated).toMatchObject({ title: 'Buy oat milk', description: '2 litres' });
   });
 
   it('adds, changes and removes a due date', async () => {
     const tools = toolsFor();
-    await call(tools, 'update_task', { task_id: 'a1', due_date: 'tomorrow' });
+    await call(tools, 'update_task', { task_id: 'a1', new_due_date: 'tomorrow' });
     expect(db[0].dueDate).toBe('2026-11-06');
-    await call(tools, 'update_task', { task_id: 'a1', due_date: 'in 2 weeks' });
+    await call(tools, 'update_task', { task_id: 'a1', new_due_date: 'in 2 weeks' });
     expect(db[0].dueDate).toBe('2026-11-19');
     await call(tools, 'update_task', { task_id: 'a1', remove_due_date: true });
     expect(db[0].dueDate).toBeNull();
@@ -162,7 +168,7 @@ describe('update_task', () => {
   });
 
   it('removes a description with ""', async () => {
-    await call(toolsFor(), 'update_task', { task_id: 'a2', description: '' });
+    await call(toolsFor(), 'update_task', { task_id: 'a2', new_description: '' });
     expect(db[1].description).toBeNull();
   });
 
@@ -171,17 +177,17 @@ describe('update_task', () => {
     await expect(call(tools, 'update_task', { task_id: 'a1' })).rejects.toThrow(
       /Nothing to change/,
     );
-    await expect(call(tools, 'update_task', { task_id: 'a1', title: ' ' })).rejects.toThrow(
+    await expect(call(tools, 'update_task', { task_id: 'a1', new_title: ' ' })).rejects.toThrow(
       'Title is required.',
     );
-    await expect(call(tools, 'update_task', { task_id: 'a1', due_date: '31 feb' })).rejects.toThrow(
-      /not a real date/,
-    );
+    await expect(
+      call(tools, 'update_task', { task_id: 'a1', new_due_date: '31 feb' }),
+    ).rejects.toThrow(/not a real date/);
   });
 
   it("cannot change another user's task", async () => {
     await expect(
-      call(toolsFor(), 'update_task', { task_id: 'b1', title: 'hacked' }),
+      call(toolsFor(), 'update_task', { task_id: 'b1', new_title: 'hacked' }),
     ).rejects.toThrow(/Task not found/);
     expect(db[4].title).toBe('Bob secret plan');
   });
@@ -207,42 +213,46 @@ describe('deleting needs confirmation', () => {
     expect(asked.task.title).toBe('Buy milk');
     expect(db.some((task) => task.id === 'a1')).toBe(true);
 
-    const result = await call(nextTurn('Yes, delete it'), 'delete_task', { task_id: 'a1' });
-    expect(result.deleted).toEqual({ id: 'a1', title: 'Buy milk' });
+    const result = await call(nextTurn('Yes, delete it'), 'confirm_delete', {});
+    expect(result.deleted).toEqual({ title: 'Buy milk' });
     expect(db.some((task) => task.id === 'a1')).toBe(false);
     expect(store.pending.size).toBe(0);
   });
 
   it('refuses to delete without asking first', async () => {
-    await expect(call(nextTurn('yes'), 'delete_task', { task_id: 'a1' })).rejects.toThrow(
-      /not confirmed/,
-    );
+    await expect(call(nextTurn('yes'), 'confirm_delete', {})).rejects.toThrow(/not confirmed/);
     expect(db.some((task) => task.id === 'a1')).toBe(true);
   });
 
   it('refuses to delete in the same message that asked', async () => {
     await askToDelete('a1');
     const sameTurn = toolsFor({ currentMessageId: 'msg-1', currentText: 'delete buy milk' });
-    await expect(call(sameTurn, 'delete_task', { task_id: 'a1' })).rejects.toThrow(/not confirmed/);
+    await expect(call(sameTurn, 'confirm_delete', {})).rejects.toThrow(/not confirmed/);
   });
 
   it.each(['no', 'No, keep it', 'wait', 'cancel', 'yes... actually no', 'which one?', 'hmm'])(
     'does not delete when the reply is "%s"',
     async (reply) => {
       await askToDelete('a1');
-      await expect(call(nextTurn(reply), 'delete_task', { task_id: 'a1' })).rejects.toThrow(
-        /not confirmed/,
-      );
+      await expect(call(nextTurn(reply), 'confirm_delete', {})).rejects.toThrow(/not confirmed/);
       expect(db.some((task) => task.id === 'a1')).toBe(true);
     },
   );
 
-  it('refuses to delete a different task from the one confirmed', async () => {
-    await askToDelete('a1');
-    await expect(call(nextTurn('yes'), 'delete_task', { task_id: 'a4' })).rejects.toThrow(
-      /not confirmed/,
+  it('deletes exactly the task that was asked about, whatever the model passes', async () => {
+    await askToDelete('a4');
+    await call(nextTurn('yes'), 'confirm_delete', { task_id: 'a1' });
+    expect(db.some((task) => task.id === 'a4')).toBe(false);
+    expect(db.some((task) => task.id === 'a1')).toBe(true);
+  });
+
+  it('asks about only one task per message', async () => {
+    const tools = toolsFor({ currentMessageId: 'msg-1' });
+    await call(tools, 'request_delete', { task_id: 'a1' });
+    await expect(call(tools, 'request_delete', { task_id: 'a4' })).rejects.toThrow(
+      /one task can be deleted at a time/,
     );
-    expect(db).toHaveLength(5);
+    expect(store.pending.get('alice-sub/chat-1')?.taskId).toBe('a1');
   });
 
   it('refuses when the "yes" is not the very next message', async () => {
@@ -252,7 +262,7 @@ describe('deleting needs confirmation', () => {
       currentText: 'yes',
       previousUserMessageId: 'msg-2',
     });
-    await expect(call(later, 'delete_task', { task_id: 'a1' })).rejects.toThrow(/not confirmed/);
+    await expect(call(later, 'confirm_delete', {})).rejects.toThrow(/not confirmed/);
   });
 
   it("cannot even ask to delete another user's task", async () => {

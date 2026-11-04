@@ -12,7 +12,7 @@ import {
   type GuardError,
   type StoredMessage,
 } from './guard';
-import { dateContext } from './system-prompt';
+import { dateContext, PENDING_DELETE_CONTEXT } from './system-prompt';
 import { createGraphqlRequest, createTaskClient, type GraphqlRequest } from './task-client';
 import { createTools } from './tools';
 import { createDynamoStore, type AssistantStore } from './usage-store';
@@ -104,6 +104,10 @@ export async function handleAssistantTurn(
     const userMessages = history.filter((message) => message.role === 'user');
     const currentIndex = userMessages.findIndex((message) => message.id === current.id);
 
+    const previousUserMessageId = userMessages[currentIndex - 1]?.id;
+    const pending = await store.getPendingDelete(caller.sub, event.conversationId);
+    const deletePending = pending !== null && pending.askedInMessageId === previousUserMessageId;
+
     tools = createTools({
       tasks: createTaskClient(request, `${caller.sub}::${caller.username}`),
       store,
@@ -111,10 +115,13 @@ export async function handleAssistantTurn(
       conversationId: event.conversationId,
       currentMessageId: current.id,
       currentText: messageText(current),
-      previousUserMessageId: userMessages[currentIndex - 1]?.id,
+      previousUserMessageId,
       today,
     });
-    systemPrompt = event.modelConfiguration.systemPrompt + dateContext(today, timeZone);
+    systemPrompt =
+      event.modelConfiguration.systemPrompt +
+      dateContext(today, timeZone) +
+      (deletePending ? PENDING_DELETE_CONTEXT : '');
   } catch (error) {
     console.error('Assistant pre-check failed', error);
     await sendError(request, event, {

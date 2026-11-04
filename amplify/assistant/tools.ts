@@ -107,16 +107,20 @@ const createSchema = {
   required: ['title'],
 } as const;
 
+// "new_" names: small models tend to put the task's current title in a plain "title" field.
 const updateSchema = {
   type: 'object',
   properties: {
-    task_id: { type: 'string', description: 'The id of the task, from find_tasks.' },
-    title: { type: 'string', description: 'New title.' },
-    description: { type: 'string', description: 'New description. Use "" to remove it.' },
-    due_date: {
+    task_id: { type: 'string', description: 'The id of the task to change, from find_tasks.' },
+    new_title: { type: 'string', description: 'The new title, when renaming the task.' },
+    new_description: {
+      type: 'string',
+      description: 'The new description. Use "" to remove the description.',
+    },
+    new_due_date: {
       type: 'string',
       description:
-        'New due date as the user said it (e.g. "tomorrow", "next Friday") or YYYY-MM-DD.',
+        'The new due date as the user said it (e.g. "tomorrow", "next Friday") or YYYY-MM-DD.',
     },
     remove_due_date: { type: 'boolean', description: 'true to remove the due date.' },
     done: { type: 'boolean', description: 'true = mark done, false = mark not done.' },
@@ -140,6 +144,7 @@ export type AssistantTool = NonNullable<
 /** The assistant's tools. All of them act only on the signed-in user's own tasks. */
 export function createTools(context: ToolContext): AssistantTool[] {
   let calls = 0;
+  let deleteRequested = false;
 
   /** Stops a runaway loop of tool calls within one message (a cost safeguard). */
   function countCall() {
@@ -204,26 +209,28 @@ export function createTools(context: ToolContext): AssistantTool[] {
 
   const updateTask = createExecutableTool(
     'update_task',
-    'Change a task: title, description, due date (set, change or remove), or done / not done. Only include the fields to change.',
+    'Change one task: rename it (new_title), change or remove its description, set, change or remove its due date, or mark it done / not done. Only include the fields to change.',
     { json: updateSchema },
     async (input) => {
       countCall();
       await getOwnTask(input.task_id);
       const changes: TaskChanges = {};
-      if (input.title !== undefined) {
-        const title = input.title.trim();
+      if (input.new_title !== undefined) {
+        const title = input.new_title.trim();
         const error = validateTitle(title);
         if (error) fail(error);
         changes.title = title;
       }
-      if (input.description !== undefined) {
-        const description = input.description.trim();
+      if (input.new_description !== undefined) {
+        const description = input.new_description.trim();
         const error = validateDescription(description);
         if (error) fail(error);
         changes.description = description;
       }
       if (input.remove_due_date) changes.dueDate = '';
-      else if (input.due_date) changes.dueDate = resolveDueDateInput(input.due_date, context.today);
+      else if (input.new_due_date) {
+        changes.dueDate = resolveDueDateInput(input.new_due_date, context.today);
+      }
       if (input.done !== undefined) changes.done = input.done;
       if (Object.keys(changes).length === 0)
         fail('Nothing to change. Ask the user what to change.');
@@ -238,7 +245,12 @@ export function createTools(context: ToolContext): AssistantTool[] {
     { json: idSchema },
     async (input) => {
       countCall();
+      // One deletion per question, so the user always knows exactly which task "yes" deletes.
+      if (deleteRequested) {
+        fail('Only one task can be deleted at a time. Ask the user which task they mean.');
+      }
       const task = await getOwnTask(input.task_id);
+      deleteRequested = true;
       await context.store.setPendingDelete(context.userId, context.conversationId, {
         taskId: task.id,
         title: task.title,
@@ -254,30 +266,31 @@ export function createTools(context: ToolContext): AssistantTool[] {
     },
   );
 
-  const deleteTask = createExecutableTool(
-    'delete_task',
-    'Step 2 of deleting a task. Only call this after request_delete, when the user\'s latest message confirms (e.g. "yes").',
-    { json: idSchema },
-    async (input) => {
+  const confirmDelete = createExecutableTool(
+    'confirm_delete',
+    "Step 2 of deleting a task: deletes the task the user was asked about in your previous reply. Only call this when the user's latest message confirms (e.g. 'yes').",
+    { json: { type: 'object', properties: {}, required: [] } as const },
+    async () => {
       countCall();
       const pending = await context.store.getPendingDelete(context.userId, context.conversationId);
-      // Enforced in code, not just in the prompt: the confirmation must be the user's very next
-      // message after the assistant asked, it must say yes, and it must be about the same task.
+      // Enforced in code, not just in the prompt: the task is the one named in the question (the
+      // model cannot substitute another id), the confirmation must be the user's very next
+      // message after the question, and it must say yes.
       const confirmed =
-        pending?.taskId === input.task_id &&
+        pending !== null &&
         pending.askedInMessageId !== context.currentMessageId &&
         pending.askedInMessageId === context.previousUserMessageId &&
         isAffirmative(context.currentText);
       if (!pending || !confirmed) {
         fail(
-          'Not deleted: the user has not confirmed. Call request_delete for this task and ask the user to confirm.',
+          'Not deleted: the user has not confirmed. Call request_delete for the task and ask the user to confirm.',
         );
       }
-      await context.tasks.deleteTask(input.task_id);
+      await context.tasks.deleteTask(pending.taskId);
       await context.store.clearPendingDelete(context.userId, context.conversationId);
-      return result({ note: DATA_NOTE, deleted: { id: input.task_id, title: pending.title } });
+      return result({ note: DATA_NOTE, deleted: { title: pending.title } });
     },
   );
 
-  return [findTasks, createTask, updateTask, requestDelete, deleteTask];
+  return [findTasks, createTask, updateTask, requestDelete, confirmDelete];
 }
