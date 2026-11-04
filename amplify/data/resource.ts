@@ -1,4 +1,7 @@
 import { a, defineData, type ClientSchema } from '@aws-amplify/backend';
+import { ASSISTANT_MAX_OUTPUT_TOKENS } from '../../shared/assistant-limits';
+import { ASSISTANT_MODEL, assistantHandler } from '../assistant/resource';
+import { ASSISTANT_SYSTEM_PROMPT } from '../assistant/system-prompt';
 
 /**
  * Task data model. Every task belongs to the user who created it:
@@ -51,6 +54,18 @@ const schema = a.schema({
     .returns(a.ref('Task'))
     .authorization((allow) => [allow.authenticated()])
     .handler(a.handler.custom({ dataSource: a.ref('Task'), entry: './edit-task.js' })),
+
+  // AI assistant chat. Each user can only see and use their own chats (owner authorization).
+  // The handler Lambda (amplify/assistant/) checks limits and gives the model task tools that
+  // call the operations above with the user's own login.
+  assistant: a
+    .conversation({
+      aiModel: ASSISTANT_MODEL,
+      systemPrompt: ASSISTANT_SYSTEM_PROMPT,
+      inferenceConfiguration: { maxTokens: ASSISTANT_MAX_OUTPUT_TOKENS, temperature: 0.2 },
+      handler: assistantHandler,
+    })
+    .authorization((allow) => allow.owner()),
 });
 
 export type Schema = ClientSchema<typeof schema>;

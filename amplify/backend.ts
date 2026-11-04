@@ -1,4 +1,8 @@
 import { defineBackend } from '@aws-amplify/backend';
+import { RemovalPolicy } from 'aws-cdk-lib';
+import { AttributeType, BillingMode, Table } from 'aws-cdk-lib/aws-dynamodb';
+import type { Function as LambdaFunction } from 'aws-cdk-lib/aws-lambda';
+import { assistantHandler } from './assistant/resource';
 import { auth } from './auth/resource';
 import { data } from './data/resource';
 
@@ -8,7 +12,21 @@ import { data } from './data/resource';
 const backend = defineBackend({
   auth,
   data,
+  assistantHandler,
 });
+
+// Assistant rate-limit counters and pending delete confirmations. Pay-per-request, and every
+// item expires on its own (TTL), so the table stays tiny. Nothing in it needs keeping.
+const assistantTable = new Table(backend.createStack('assistant-state'), 'AssistantState', {
+  partitionKey: { name: 'pk', type: AttributeType.STRING },
+  billingMode: BillingMode.PAY_PER_REQUEST,
+  timeToLiveAttribute: 'expiresAt',
+  removalPolicy: RemovalPolicy.DESTROY,
+});
+// The handler is always a Node.js Lambda function (NodejsFunction), so it has addEnvironment.
+const assistantLambda = backend.assistantHandler.resources.lambda as LambdaFunction;
+assistantTable.grantReadWriteData(assistantLambda);
+assistantLambda.addEnvironment('ASSISTANT_TABLE_NAME', assistantTable.tableName);
 
 // Explicit password policy, enforced by Cognito itself (not only by the signup form).
 const { cfnUserPool } = backend.auth.resources.cfnResources;
